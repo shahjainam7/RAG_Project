@@ -1,36 +1,44 @@
-To generate your embeddings, the code uses some specific factors, not the entire document. This was a deliberate change I made to improve your model's accuracy.
+# How the Advanced RAG System Works
 
-  Here is exactly what is happening under the hood:
+This project has been upgraded from a basic "Naive RAG" (Retrieval-Augmented Generation) pipeline into an Advanced RAG system. It is designed to take a user's competitive programming question, efficiently search through a database of ~2,900 LeetCode problems, and provide an expert AI-generated answer regarding the optimal approach and time complexity.
 
-  1. What data is specifically used?
-  The embedding model (all-MiniLM-L6-v2) only "sees" two things:
-   * The Problem Title: (e.g., "Two Sum")
-   * The Problem Description: (The actual explanation of the logic and task)
+Here is a detailed, easy-to-understand breakdown of how the entire system works under the hood.
 
-  These are combined into a single string called content_to_embed (e.g., "Two Sum: Given an array of integers...").
+## 1. What Data is Used for Searching?
+To find the right problem, the system doesn't just scan the entire text file blindly. It selectively extracts the most important parts to create an "embedding" (a mathematical representation of the text).
 
-  2. Why are the other factors excluded?
-  In your original code, you were embedding the entire document, which included:
-   * Boilerplate Text: Words like "Problem Title:", "Description:", "Constraints:", and "Hints:" appear in every single file. If you embed them, the model starts thinking
-     all problems are similar just because they all have the word "Constraints."
-   * Constraints: Values like 1 <= n <= 10^5 don't help the model understand the logic of the problem; they just add noise.
-   * Complexity & Topics: These are the answers we want to find. If we include them in the input embedding, it can actually confuse the "semantic search" when a user asks
-     a natural question.
+* **What gets embedded:** Only the **Problem Title** and the **Problem Description** are combined into a single string.
+* **Why exclude the rest?**
+  * **Boilerplate/Noise:** Words like "Constraints:" or "Hints:" appear in every problem. Including them confuses the search engine into thinking all problems are similar.
+  * **Token Limits:** The AI models have memory limits (e.g., 256 tokens). By stripping out the noise, we ensure the core logic of the problem fits perfectly into memory without getting cut off.
+* **What about the other data?** Information like "Topics" and "Expected Time Complexity" are still saved in the database as **Metadata**. We don't search by them, but once we find the relevant problem using the description, we pull this metadata to help formulate the final answer.
 
-  3. The "Token Limit" Factor
-  The embedding model you are using has a limit of 256 tokens.
-   * Before: By including everything (Hints, Constraints, Boilerplate), the actual Description was often being cut off (truncated) because the text was too long.
-   * Now: By only embedding the Title and Description, we ensure the most important "semantic" part of the problem fits within the model's memory, leading to much more
-     accurate matches.
+## 2. The Retrieval Pipeline (How we find the answer)
+When a user asks a question, the system goes through a multi-step process to find the absolute best match:
 
-  4. How are the other factors used?
-  Even though things like Topics and Complexity are not used to generate the vector (the coordinate in math space), they are still sent to Pinecone as Metadata. 
+### Step A: The Semantic Cache (The Shortcut)
+Before doing any heavy lifting, the system checks its **Semantic Cache**. 
+* If a user asks a question that is at least 90% similar to a question asked previously, the system instantly returns the saved answer from memory. 
+* This bypasses the database and the LLM completely, making the system incredibly fast and cost-efficient.
 
-  This means:
-   1. We find the right problem using the Description.
-  Summary: We use the core logic (Title + Description) to find the problem, and we use the metadata (Topics + Complexity) to answer the user.
+### Step B: Hybrid Search (The Wide Net)
+If the question is new, the system searches the Pinecone vector database using a **Hybrid Search** approach:
+1. **Dense Search (Semantic Meaning):** Uses the `all-MiniLM-L6-v2` model to understand the *meaning* or *concept* behind the question (e.g., recognizing that "finding the shortest path" relates to graphs).
+2. **Sparse Search (Exact Keywords):** Uses a `BM25Encoder` to look for exact keyword matches (e.g., specific terms like "Dijkstra" or "Segment Tree").
+* The database combines these two scores (using a dot-product metric) to return the top 20 potential candidate problems.
 
+### Step C: Reranking (The Quality Filter)
+Fetching 20 problems is great for casting a wide net, but too much text to send to the final AI. 
+* The system uses an advanced **Cross-Encoder model** (`ms-marco-MiniLM-L-6-v2`) to rigorously score and compare the user's exact query against those 20 candidates. 
+* It filters out the "semantic noise" and narrows the list down to the absolute best **5 problems**.
 
+## 3. The Final Output (The Coach)
+Finally, those top 5 perfectly-matched problems (along with their metadata) are sent to an LLM (via OpenRouter/Gemini) acting as an expert competitive programming coach. 
 
+The LLM analyzes the context and provides a concise, structured answer:
+1. **OPTIMAL METHOD:** The primary algorithm or data structure needed.
+2. **TIME COMPLEXITY:** The exact mathematical efficiency.
+3. **WHY:** A one-sentence explanation of why this is the best approach for the given constraints.
 
-
+## Summary
+By combining **Smart Data Parsing**, **Semantic Caching**, **Hybrid (Sparse + Dense) Search**, and **Cross-Encoder Reranking**, this system ensures that the AI coach gets the fastest, most precise, and least noisy context possible to answer your programming questions!

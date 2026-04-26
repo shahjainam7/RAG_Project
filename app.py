@@ -45,7 +45,14 @@ def get_llm_answer(query, context):
 
 @app.post("/predict")
 def predict(problem_description: str):
-    # 1. Input Query -> Embedding -> Pinecone Retrieve
+    from src.cache import semantic_cache
+    
+    # 0. Check Semantic Cache
+    cached_response = semantic_cache.check(problem_description)
+    if cached_response:
+        return cached_response
+
+    # 1. Input Query -> Embedding -> Pinecone Retrieve (with Reranking)
     matches = retrieve(problem_description)
     
     # 2. Get metadata context
@@ -57,10 +64,15 @@ def predict(problem_description: str):
     # Also keep the structured data if needed
     topics, complexity = aggregate(matches)
 
-    return {
+    response_data = {
         "structured_data": {
             "topics": topics,
             "time_complexity": complexity
         },
         "llm_answer": llm_answer
     }
+    
+    # 4. Store in Cache
+    semantic_cache.store(problem_description, response_data)
+
+    return response_data
