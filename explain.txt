@@ -1,0 +1,36 @@
+To generate your embeddings, the code uses some specific factors, not the entire document. This was a deliberate change I made to improve your model's accuracy.
+
+  Here is exactly what is happening under the hood:
+
+  1. What data is specifically used?
+  The embedding model (all-MiniLM-L6-v2) only "sees" two things:
+   * The Problem Title: (e.g., "Two Sum")
+   * The Problem Description: (The actual explanation of the logic and task)
+
+  These are combined into a single string called content_to_embed (e.g., "Two Sum: Given an array of integers...").
+
+  2. Why are the other factors excluded?
+  In your original code, you were embedding the entire document, which included:
+   * Boilerplate Text: Words like "Problem Title:", "Description:", "Constraints:", and "Hints:" appear in every single file. If you embed them, the model starts thinking
+     all problems are similar just because they all have the word "Constraints."
+   * Constraints: Values like 1 <= n <= 10^5 don't help the model understand the logic of the problem; they just add noise.
+   * Complexity & Topics: These are the answers we want to find. If we include them in the input embedding, it can actually confuse the "semantic search" when a user asks
+     a natural question.
+
+  3. The "Token Limit" Factor
+  The embedding model you are using has a limit of 256 tokens.
+   * Before: By including everything (Hints, Constraints, Boilerplate), the actual Description was often being cut off (truncated) because the text was too long.
+   * Now: By only embedding the Title and Description, we ensure the most important "semantic" part of the problem fits within the model's memory, leading to much more
+     accurate matches.
+
+  4. How are the other factors used?
+  Even though things like Topics and Complexity are not used to generate the vector (the coordinate in math space), they are still sent to Pinecone as Metadata. 
+
+  This means:
+   1. We find the right problem using the Description.
+  Summary: We use the core logic (Title + Description) to find the problem, and we use the metadata (Topics + Complexity) to answer the user.
+
+
+
+
+
